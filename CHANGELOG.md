@@ -2,6 +2,18 @@
 
 Format from [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), versions follow SemVer.
 
+## Jesse's fork — 0.2.0
+
+- Add read-only `jev-commit check` runs, local reports, freshness checks, explicit
+  test argv and a PlayJev offline-test/artifact profile.
+- Default user entrypoints to Ollaya CLI. Add explicit direct Jev/OpenRouter
+  transports, strict typed-response validation and no hosted fallback.
+- Keep the optional hook advisory/fail-open, but skip inference on blocking belt
+  secrets. Extend child-credential isolation and bound all split chunk attempts.
+- Preserve upstream license and documented limits; no gameplay success is claimed.
+- Normalize Git diff prefixes so global mnemonic/custom prefixes cannot corrupt
+  staged file paths in the check state or belt report.
+
 ## [Unreleased]
 
 ### Changed

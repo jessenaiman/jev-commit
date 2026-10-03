@@ -1,5 +1,61 @@
 # jev-commit
 
+## Jesse's fork: check-in runs, like gameplay runs
+
+Fork of [valentynkit/jev-commit](https://github.com/valentynkit/jev-commit), based on
+`311e163b8abb9c333132155bc2e0bbfac4f36283`; original MIT license retained.
+
+```bash
+# Install this fork (Python 3.10+, no runtime dependencies).
+uv tool install --from git+https://github.com/jessenaiman/jev-commit jev-commit
+
+# From PlayJev, after staging only the changes you intend to review:
+jev-commit check --profile playjev -m "Describe the staged changes"
+```
+
+One command captures the staged diff, runs PlayJev's offline tests and whitespace
+check, asks narrow typed questions, and saves a local report. It **never stages,
+commits, pushes, installs hooks, or treats a model judgment as permission**.
+With no profile, it reviews the message/diff only; tests require `--test <argv>`.
+
+| Provider | Selection | Default model | Credential |
+| --- | --- | --- | --- |
+| Local Ollaya CLI | default / `--provider ollaya` | `kev:0.8b` | none |
+| Direct TypeSafe Jev | `--provider jev` | `jev-1.13.0` | `TYPESAFE_API_KEY` or `JEV_API_KEY` |
+| OpenRouter System One | `--provider openrouter` | `typesafe/jev-1.13` | `OPENROUTER_API_KEY` |
+
+`--model` pins an exact ID. No automatic provider/model fallback, no direct Ollaya
+HTTP client, and **no OpenRouter traffic unless OpenRouter is explicitly selected**.
+Keys must be exported; `.env` files are not automatically loaded.
+
+```bash
+jev-commit check -m "Describe changes" --provider openrouter
+jev-commit check -m "Describe changes" --test python -m pytest -q
+```
+
+Reports default to `.git/jev-commit-runs/<unique-run>/` (worktree-aware), with
+`summary.json` and `inference.jsonl`. `--out` must name a new local directory;
+never commit these reports. Known keys and detected blocking secret lines are
+not saved/uploaded. Non-blocking credential candidates remain review data: this
+is **not** a guarantee that every possible secret is detected.
+
+Run exits: **0 ready**, **4 human review**, **3 hold/incomplete**, **20 blocked**,
+**2 usage/setup error**. A failed test, changed snapshot or failed/partial inference
+cannot become a successful check. Tests execute the working tree; if tests are
+requested, unstaged/untracked files prevent a ready result. Their console output
+is not retained, only the command and exit status. `ready` is a limited staged
+message/diff result, not a code-correctness or gameplay-completion certificate.
+
+The optional commit hook below keeps upstream's advisory/fail-open behavior,
+but this fork defaults it to local Ollaya too. Use `--provider jev` explicitly
+for the original hosted behavior. Do not install a hook unless you want one.
+
+See [FORK.md](FORK.md) for workflow, limits and test evidence. The remaining
+examples and cost figures describe the **upstream hosted Jev hook**, not measured
+fork/local performance or detection accuracy.
+
+## Upstream hook overview
+
 Your agent writes the code, then writes the commit message about the code. Nothing checks
 that the two agree. This does, in one call to Jev, before the commit lands.
 
@@ -8,10 +64,11 @@ that the two agree. This does, in one call to Jev, before the commit lands.
 ```yaml
 # .pre-commit-config.yaml
 repos:
-  - repo: https://github.com/valentynkit/jev-commit
-    rev: v0.1.0
+  - repo: https://github.com/jessenaiman/jev-commit
+    rev: <pin-a-reviewed-commit>
     hooks:
       - id: jev-commit
+        args: [--provider, jev]  # explicit hosted behavior; omit for local Ollaya
 ```
 
 ```sh
@@ -87,18 +144,19 @@ recorded answers, and this README carries the number once that has run against a
 The pre-commit snippet above, or a plain git hook:
 
 ```sh
-pipx install git+https://github.com/valentynkit/jev-commit
-printf '#!/bin/sh\nexec jev-commit "$1"\n' > .git/hooks/commit-msg
+pipx install git+https://github.com/jessenaiman/jev-commit
+printf '#!/bin/sh\nexec jev-commit --provider jev "$1"\n' > .git/hooks/commit-msg
 chmod +x .git/hooks/commit-msg
 ```
 
 ```sh
-cp .env.example .env
+# Explicit hosted provider only. Read .env.example; export your key securely.
+# This tool never loads .env files automatically.
 ```
 
 | variable | required | purpose |
 |---|---|---|
-| `TYPESAFE_API_KEY` | required | the Jev key, read only by the hook, never handed to git |
+| `TYPESAFE_API_KEY` | for `--provider jev` | the Jev key, never handed to git/test/Ollaya children |
 | `JEV_API_KEY` | optional | alias for the same key |
 | `JEV_BASE_URL` | optional | point at a local gateway shim instead of api.typesafe.ai |
 | `NO_COLOR` | optional | plain text report, no color and no spinner |
@@ -131,9 +189,11 @@ A line ending in `# jev-commit: allow` is skipped by the belt.
 5. Hunks are packed into states under a 24k token budget. Lockfiles, generated directories,
    minified files and binaries degrade to a row of counts. A file over its own cap keeps its
    first and last hunk.
-6. One request per chunk, five nouls each, pinned to `jev-1.13.0`. A too-big response splits
-   the chunk and retries. The gate question rides the first request only; the match answer
-   combines by min and the three findings by max, so the worse answer always wins.
+6. One hosted request per chunk, five nouls each. Local Ollaya serializes one Noul per CLI
+   invocation under the same deadline. A hosted too-big response splits the chunk and
+   retries, bounded by 24 chunk attempts. The gate question rides the first chunk only;
+   the match answer combines by min and the three findings by max. Provider/model
+   selection is explicit and pinned per run.
 7. Every error path fails open. An API error, a timeout past 8 seconds, a missing key or a
    Ctrl-C exits 0 and lets the commit through.
 

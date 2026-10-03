@@ -7,6 +7,10 @@ dist/
 *.egg-info/
 measure.json
 frames/
+.env
+.env.*
+!.env.example
+check-runs/
 
 # Internal: design notes, review rounds, session prompts, launch copy, lab research.
 # These live on disk and stay out of the package.

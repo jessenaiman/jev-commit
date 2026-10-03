@@ -12,7 +12,7 @@ e2e:
 
 try-repo:
 	rm -rf $(SCRATCH)/repo && mkdir -p $(SCRATCH)/repo
-	tar --exclude .git --exclude __pycache__ --exclude .pytest_cache -cf - . | tar -xf - -C $(SCRATCH)/repo
+	tar --exclude .git --exclude .venv --exclude '*.egg-info' --exclude __pycache__ --exclude .pytest_cache --exclude _local --exclude check-runs --exclude .env -cf - . | tar -xf - -C $(SCRATCH)/repo
 	git -C $(SCRATCH)/repo init -q
 	git -C $(SCRATCH)/repo add -A
 	git -C $(SCRATCH)/repo -c user.name=t -c user.email=t@t -c commit.gpgsign=false commit -q -m skeleton --no-verify

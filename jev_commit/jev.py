@@ -171,4 +171,5 @@ def ask(state, questions, env=None, model=None, deadline_s=DEADLINE_S):
         "model": model if isinstance(model, str) and model else "unknown",
         "usage": usage if isinstance(usage, dict) else {},
         "ms": int((time.monotonic() - started) * 1000),
+        "response": body,
     }

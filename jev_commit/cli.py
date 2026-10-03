@@ -23,6 +23,7 @@ from jev_commit.questions import (
     QUESTIONS,
 )
 from jev_commit.report import Report, cost_of, status_of
+from jev_commit.transports import Transport, provider_args
 
 OK, BLOCK, USAGE = 0, 20, 2
 
@@ -63,7 +64,8 @@ def parse_args(argv):
     parser = argparse.ArgumentParser(
         prog="jev-commit",
         add_help=True,
-        description="Judge a commit message against its staged diff.",
+        description="Optional commit-msg hook. For a saved read-only run, use `jev-commit check`.",
+        epilog='Example: jev-commit check --profile playjev -m "Describe staged changes"',
     )
     parser.add_argument(
         "message_file", nargs="?", help="the file git wrote the message to"
@@ -85,6 +87,7 @@ def parse_args(argv):
         action="store_true",
         help="compare against HEAD^ instead of the index, for `git add` then --amend",
     )
+    provider_args(parser, timeout=jev.DEADLINE_S)
     return parser.parse_args(argv)
 
 
@@ -105,7 +108,7 @@ def combine_answers(acc, answers):
 MAX_REQUESTS = 24
 
 
-def judge(states, env, gate_wanted=True, deadline_s=jev.DEADLINE_S):
+def judge(states, env, gate_wanted=True, deadline_s=jev.DEADLINE_S, ask=None):
     """One request per chunk, split and retried on a too-big response.
 
     Routing: the gate question rides the first request only, the match question combines by
@@ -120,6 +123,8 @@ def judge(states, env, gate_wanted=True, deadline_s=jev.DEADLINE_S):
     model = MODEL
     error = None
     gate_asked = not gate_wanted
+    attempted = 0
+    ask = ask or jev.ask
     stop = time.monotonic() + deadline_s
     queue = [(i == 0, state) for i, state in enumerate(states)]
     while queue:
@@ -128,8 +133,8 @@ def judge(states, env, gate_wanted=True, deadline_s=jev.DEADLINE_S):
         if gate_asked or not first:
             asking.pop(MESSAGE_IS_SUBSTANTIVE)
         left = stop - time.monotonic()
-        if requests >= MAX_REQUESTS:
-            error = jev.JevError("stopped after %d requests" % requests)
+        if attempted >= MAX_REQUESTS:
+            error = jev.JevError("stopped after %d attempts" % attempted)
             break
         if left <= 0:
             error = jev.JevError(
@@ -137,7 +142,8 @@ def judge(states, env, gate_wanted=True, deadline_s=jev.DEADLINE_S):
             )
             break
         try:
-            out = jev.ask(state, asking, env=env, deadline_s=left)
+            attempted += 1
+            out = ask(state, asking, env=env, deadline_s=left)
         except jev.TooBig as err:
             halves = chunk.bisect(state)
             if not halves:
@@ -162,6 +168,7 @@ def judge(states, env, gate_wanted=True, deadline_s=jev.DEADLINE_S):
         "requests": requests,
         "usage": {"input_tokens": usage},
         "error": error,
+        "attempted": attempted,
     }
 
 
@@ -219,6 +226,10 @@ def main(argv=None):
     Anything unexpected below, a malformed patch, a gateway answering `null`, a Ctrl-C
     during the call, is this tool's problem and not the committer's.
     """
+    argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] == "check":
+        from jev_commit.run import main as check_main
+        return check_main(argv[1:])
     try:
         return _run(argv)
     except SystemExit:
@@ -261,21 +272,29 @@ def _run(argv=None):
     # The belt reads the whole diff, never only the part that survived the token budget.
     hits = belt.scan(prep["all_hunks"], exclude=args.exclude)
     amend = captured["mode"] == "amend"
+    if belt.blocking(hits):
+        # Never upload a credential already caught by deterministic checks.
+        return _belt_only(report, hits, amend)
 
     added = sum(row["added"] for row in prep["files"])
     removed = sum(row["removed"] for row in prep["files"])
     tokens = sum(chunk.estimate_tokens(repr(state)) for state in states)
     report.header(len(prep["files"]), added, removed, tokens, len(states))
-    report.asking(MODEL)
+    transport = Transport(args.provider, args.model, env=env)
+    report.asking(args.provider + "/" + transport.model)
     try:
-        out = judge(states, env)
+        out = judge(states, env, deadline_s=args.timeout, ask=transport.ask)
     finally:
         report.stop_spinner()
 
     if not out["requests"]:
         report.skipped(str(out["error"]) if out["error"] else "no answers")
         return _belt_only(report, hits, amend)
-    report.resolved(out["model"], out["ms"], cost_of(out["usage"]))
+    if args.provider == "jev":
+        report.resolved(out["model"], out["ms"], cost_of(out["usage"]))
+    else:
+        report.line("%s · %d ms · cost %s" % (out["model"], out["ms"],
+                    "no hosted charge (local compute)" if args.provider == "ollaya" else "see OpenRouter usage"))
 
     code, findings, rows = decide(
         out["answers"], hits, limits, strict=args.strict, blocking_allowed=not amend

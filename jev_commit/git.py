@@ -27,6 +27,11 @@ GIT_CFG = [
     "protocol.allow=never",
     "credential.helper=",
     "diff.external=",
+    "diff.mnemonicPrefix=false",
+    "diff.noprefix=false",
+    "diff.srcPrefix=a/",
+    "diff.dstPrefix=b/",
+    "diff.relative=false",
 ]
 
 GIT_ENV = {
@@ -41,7 +46,8 @@ GIT_ENV = {
 }
 
 # The key never enters the child env: the child reads attacker-shaped bytes.
-SECRET_ENV = ("TYPESAFE_API_KEY", "JEV_API_KEY", "TYPESAFE_BASE_URL", "JEV_BASE_URL")
+SECRET_ENV = ("TYPESAFE_API_KEY", "JEV_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY",
+              "ANTHROPIC_API_KEY", "GH_TOKEN", "GITHUB_TOKEN", "TYPESAFE_BASE_URL", "JEV_BASE_URL")
 
 # The two GIT_* the parent git sets to say which index it is committing. `git commit -a`,
 # `--only`, `-p` and `git commit <path>` stage into a temporary index and name it here;
@@ -139,6 +145,14 @@ def capture(cwd=None, amend_base=False):
     names, _, cut_a = run_git(["diff", "--cached"] + DIFF_FLAGS + ["--name-status", "-z"] + tail, cwd=cwd)
     patch, _, cut_b = run_git(["diff", "--cached"] + DIFF_FLAGS + ["-U2"] + tail, cwd=cwd)
     return {"mode": mode, "base": base, "name_status": names, "patch": patch, "truncated": cut_a or cut_b}
+
+
+def capture_staged(cwd=None):
+    """Explicit run contract: only staged changes, never infer an amend from an empty index."""
+    names, _, cut_a = run_git(["diff", "--cached"] + DIFF_FLAGS + ["--name-status", "-z", "--"], cwd=cwd)
+    patch, _, cut_b = run_git(["diff", "--cached"] + DIFF_FLAGS + ["-U2", "--"], cwd=cwd)
+    return {"mode": "index", "base": None, "name_status": names, "patch": patch,
+            "truncated": cut_a or cut_b}
 
 
 def parse_name_status(text):

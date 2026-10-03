@@ -92,6 +92,18 @@ def test_plain_commit_uses_the_index(repo):
     assert "x = 2" in g.capture(cwd=repo)["patch"]
 
 
+def test_staged_paths_ignore_mnemonic_and_custom_global_diff_prefixes(repo):
+    commit(repo, "a.py", "x = 1\n", "add a")
+    write(repo, "a.py", "x = 2\n")
+    git(repo, "add", "a.py")
+    for key, value in (("diff.mnemonicPrefix", "true"), ("diff.noprefix", "true"),
+                       ("diff.srcPrefix", "custom-old/"), ("diff.dstPrefix", "custom-new/")):
+        git(repo, "config", key, value)
+    from jev_commit.chunk import prepare
+    captured = g.capture_staged(repo)
+    assert prepare(captured["patch"])["files"][0]["path"] == "a.py"
+
+
 def test_amend_with_nothing_staged_rebases_to_head_parent(repo):
     commit(repo, "a.py", "x = 1\n", "add a")
     commit(repo, "b.py", "y = 1\n", "add b")

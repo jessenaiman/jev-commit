@@ -1,6 +1,29 @@
 import subprocess
+import urllib.parse
+import urllib.request
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def no_real_inference(monkeypatch):
+    """The whole suite is offline, including upstream tests predating local defaults."""
+    run = subprocess.run
+    open_url = urllib.request.urlopen
+
+    def offline_run(argv, *args, **kwargs):
+        if argv and argv[0] == "ollaya":
+            pytest.fail("Real Ollaya inference is forbidden in regression tests; mock the CLI")
+        return run(argv, *args, **kwargs)
+
+    def loopback_only(request, *args, **kwargs):
+        url = request.full_url if hasattr(request, "full_url") else request
+        if urllib.parse.urlsplit(url).hostname not in ("127.0.0.1", "localhost", "::1"):
+            pytest.fail("Hosted inference/network is forbidden in regression tests")
+        return open_url(request, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", offline_run)
+    monkeypatch.setattr(urllib.request, "urlopen", loopback_only)
 
 # Setup git, not the hook's git: this machine has a global core.hooksPath, so every
 # scratch repo pins its own.

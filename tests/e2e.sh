@@ -6,6 +6,7 @@
 # to install while core.hooksPath is set, so the install runs with the global config out of
 # the way, and this machine's global core.hooksPath is overridden per commit.
 set -eu
+unset TYPESAFE_API_KEY JEV_API_KEY OPENROUTER_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 SCRATCH=${SCRATCH:-/tmp/jev-commit-e2e}
@@ -15,7 +16,7 @@ GIT="git -c core.hooksPath=.git/hooks -c user.name=t -c user.email=t@t -c commit
 rm -rf "$SCRATCH"
 mkdir -p "$SCRATCH/hook" "$SCRATCH/app"
 
-tar --exclude .git --exclude __pycache__ --exclude .pytest_cache -cf - -C "$ROOT" . | tar -xf - -C "$SCRATCH/hook"
+tar --exclude .git --exclude .venv --exclude '*.egg-info' --exclude __pycache__ --exclude .pytest_cache --exclude _local --exclude check-runs --exclude .env -cf - -C "$ROOT" . | tar -xf - -C "$SCRATCH/hook"
 (cd "$SCRATCH/hook" && git init -q && $GIT add -A && $GIT commit -q -m hook --no-verify)
 REV=$(git -C "$SCRATCH/hook" rev-parse HEAD)
 
@@ -32,6 +33,7 @@ repos:
     rev: $REV
     hooks:
       - id: jev-commit
+        args: [--provider, jev]
 YAML
 mkdir -p src
 printf 'def parse(text):\n    return text.split()\n' > src/parser.py

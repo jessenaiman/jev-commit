@@ -118,7 +118,7 @@ def test_a_five_hundred_exits_zero(repo, fake, monkeypatch):
     monkeypatch.setenv("JEV_BASE_URL", url)
     message = repo / "msg"
     message.write_text("fix: bump x\n")
-    assert cli.main([str(message)]) == cli.OK
+    assert cli.main(["--provider", "jev", str(message)]) == cli.OK
 
 
 def test_an_unreachable_api_still_blocks_on_the_belt(repo, monkeypatch):
